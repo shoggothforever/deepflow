@@ -592,10 +592,12 @@ func (w *CKWriter) writeItems(queueID, connID int, cache *Cache) error {
 	}
 
 	ckdbBlock := ckdb.NewBlock(batch)
-	for _, item := range cache.items {
-		item.WriteBlock(ckdbBlock)
-		if err := ckdbBlock.WriteAll(); err != nil {
-			return fmt.Errorf("item write block failed: %s", err)
+	for i := 0; i < config.WriteMultiple; i++ {
+		for _, item := range cache.items {
+			item.WriteBlock(ckdbBlock)
+			if err := ckdbBlock.WriteAll(); err != nil {
+				return fmt.Errorf("item write block failed: %s", err)
+			}
 		}
 	}
 	if err = ckdbBlock.Send(); err != nil {
