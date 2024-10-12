@@ -239,7 +239,11 @@ func (e *PrometheusExporter) sendRequest(queueID int, batchs []prompb.TimeSeries
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
 	if resp.StatusCode >= 400 {
 		e.requestFailedCounters[queueID]++
-		return fmt.Errorf("remote write returned HTTP status %v; err = %s: %s", resp.Status, err, body)
+		failedBatchs := ""
+		for i := range batchs {
+			failedBatchs += fmt.Sprintf("batch index %d: %s", i, batchs[i].String())
+		}
+		return fmt.Errorf("remote write returned HTTP status %v; err = %s: %s; %s", resp.Status, err, body, failedBatchs)
 	}
 
 	return nil
