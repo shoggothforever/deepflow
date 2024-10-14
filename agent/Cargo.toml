@@ -158,6 +158,7 @@ walkdir = "2"
 [features]
 enterprise = ["extended_profile", "enterprise-utils"]
 extended_profile = []
+dylib_lib_pcap = []
 
 [[bench]]
 name = "common"
