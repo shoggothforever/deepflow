@@ -783,6 +783,8 @@ func (t *WhereTag) Trans(expr sqlparser.Expr, w *Where, e *CHEngine) (view.Node,
 				"pod_ingress", "pod_service", "ip", "vpc", "l2_vpc":
 				if !strings.HasSuffix(strings.Trim(t.Tag, "`"), "_0") && !strings.HasSuffix(strings.Trim(t.Tag, "`"), "_1") {
 					filter = TransAlertEventNoSuffixFilter(tagItem.WhereTranslator, tagItem.WhereRegexpTranslator, op, t.Value)
+				} else if noIDTag == "ip" {
+					filter = TransIngressFilter(tagItem.WhereTranslator, tagItem.WhereRegexpTranslator, op, t.Value)
 				} else {
 					filter = TransChostFilter(tagItem.WhereTranslator, tagItem.WhereRegexpTranslator, op, t.Value)
 				}
@@ -1027,6 +1029,9 @@ func (t *WhereTag) Trans(expr sqlparser.Expr, w *Where, e *CHEngine) (view.Node,
 					}
 				}
 			case "ip", "tunnel_tx_ip", "tunnel_rx_ip", "nat_real_ip":
+				fmt.Println(whereTag)
+				fmt.Println(tagItem.WhereTranslator)
+				fmt.Println(fmt.Sprintf(tagItem.WhereTranslator, "=", "'1.1.1.1'", "=", "'1.1.1.1'"))
 				equalFilter := ""
 				ipValues := strings.TrimLeft(t.Value, "(")
 				ipValues = strings.TrimRight(ipValues, ")")
@@ -1041,7 +1046,7 @@ func (t *WhereTag) Trans(expr sqlparser.Expr, w *Where, e *CHEngine) (view.Node,
 					if strings.Contains(ipValue, "/") {
 						cidrIPs = append(cidrIPs, ipValue)
 					} else {
-						ips = append(ips, chCommon.IPFilterStringToHex(ipValue))
+						ips = append(ips, ipValue)
 					}
 				}
 				for _, cidrIP := range cidrIPs {
@@ -1050,26 +1055,32 @@ func (t *WhereTag) Trans(expr sqlparser.Expr, w *Where, e *CHEngine) (view.Node,
 					if err != nil {
 						return nil, err
 					}
-					minIP := chCommon.IPFilterStringToHex("'" + cidr.Masked().Range().From().String() + "'")
-					maxIP := chCommon.IPFilterStringToHex("'" + cidr.Masked().Range().To().String() + "'")
+					minIP := "'" + cidr.Masked().Range().From().String() + "'"
+					maxIP := "'" + cidr.Masked().Range().To().String() + "'"
 					cidrFilter := ""
 					if ipOp == ">=" || ipOp == ">" {
 						if slices.Contains([]string{"tunnel_tx_ip", "tunnel_rx_ip"}, whereTag) {
-							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, maxIP, ipOp, maxIP)
-						} else {
+							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, maxIP, ipOp, maxIP, ipOp, maxIP, ipOp, maxIP)
+						} else if strings.Contains(whereTag, "nat_real_ip") {
 							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, maxIP)
+						} else {
+							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, maxIP, ipOp, maxIP)
 						}
 					} else if ipOp == "<=" || ipOp == "<" {
 						if slices.Contains([]string{"tunnel_tx_ip", "tunnel_rx_ip"}, whereTag) {
-							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, minIP, ipOp, minIP)
-						} else {
+							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, minIP, ipOp, minIP, ipOp, minIP, ipOp, minIP)
+						} else if strings.Contains(whereTag, "nat_real_ip") {
 							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, minIP)
+						} else {
+							cidrFilter = fmt.Sprintf(tagItem.WhereTranslator, ipOp, minIP, ipOp, minIP)
 						}
 					} else {
 						if slices.Contains([]string{"tunnel_tx_ip", "tunnel_rx_ip"}, whereTag) {
 							cidrFilter = fmt.Sprintf("((%s_0 >= %s AND %s_0 <= %s) OR (%s_1 >= %s AND %s_1 <= %s))", whereTag, minIP, whereTag, maxIP, whereTag, minIP, whereTag, maxIP)
-						} else {
+						} else if strings.Contains(whereTag, "nat_real_ip") {
 							cidrFilter = "(" + fmt.Sprintf(tagItem.WhereTranslator, ">=", minIP) + " AND " + fmt.Sprintf(tagItem.WhereTranslator, "<=", maxIP) + ")"
+						} else {
+							cidrFilter = "(" + fmt.Sprintf(tagItem.WhereTranslator, ">=", minIP, ">=", minIP) + " AND " + fmt.Sprintf(tagItem.WhereTranslator, "<=", maxIP, "<=", maxIP) + ")"
 						}
 
 					}
@@ -1084,9 +1095,11 @@ func (t *WhereTag) Trans(expr sqlparser.Expr, w *Where, e *CHEngine) (view.Node,
 						ipFilters := []string{}
 						for _, ip := range ips {
 							if slices.Contains([]string{"tunnel_tx_ip", "tunnel_rx_ip"}, whereTag) {
-								ipFilters = append(ipFilters, fmt.Sprintf(tagItem.WhereTranslator, ipOp, ip, ipOp, ip))
-							} else {
+								ipFilters = append(ipFilters, fmt.Sprintf(tagItem.WhereTranslator, ipOp, ip, ipOp, ip, ipOp, ip, ipOp, ip))
+							} else if strings.Contains(whereTag, "nat_real_ip") {
 								ipFilters = append(ipFilters, fmt.Sprintf(tagItem.WhereTranslator, ipOp, ip))
+							} else {
+								ipFilters = append(ipFilters, fmt.Sprintf(tagItem.WhereTranslator, ipOp, ip, ipOp, ip))
 							}
 						}
 						ipsFilter = "(" + strings.Join(ipFilters, " OR ") + ")"
@@ -1100,9 +1113,12 @@ func (t *WhereTag) Trans(expr sqlparser.Expr, w *Where, e *CHEngine) (view.Node,
 							equalOP = "="
 						}
 						if slices.Contains([]string{"tunnel_tx_ip", "tunnel_rx_ip"}, whereTag) {
-							ipsFilter = "(" + fmt.Sprintf(tagItem.WhereTranslator, equalOP, ipsStr, equalOP, ipsStr) + ")"
-						} else {
+							ipsFilter = "(" + fmt.Sprintf(tagItem.WhereTranslator, equalOP, ipsStr, equalOP, ipsStr, equalOP, ipsStr, equalOP, ipsStr) + ")"
+						} else if strings.Contains(whereTag, "nat_real_ip") {
 							ipsFilter = "(" + fmt.Sprintf(tagItem.WhereTranslator, equalOP, ipsStr) + ")"
+							fmt.Println(ipsFilter)
+						} else {
+							ipsFilter = "(" + fmt.Sprintf(tagItem.WhereTranslator, equalOP, ipsStr, equalOP, ipsStr) + ")"
 						}
 					}
 				}
